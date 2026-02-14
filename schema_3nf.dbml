@@ -1,0 +1,57 @@
+// 3NF schema: blood_type moved to lookup table; redundant attributes removed
+
+Table blood_types {
+  id integer [pk, increment]
+  type text [not null, unique]
+}
+
+Table donors {
+  id integer [pk, increment]
+  name text [not null]
+  blood_type_id integer [not null]
+  phone text
+  city text
+  created_at text [not null]
+  deleted_at text
+}
+
+Table recipients {
+  id integer [pk, increment]
+  name text [not null]
+  blood_type_id integer [not null]
+  phone text
+  hospital text
+  created_at text [not null]
+  deleted_at text
+}
+
+Table donations {
+  id integer [pk, increment]
+  donor_id integer [not null]
+  units integer [not null]
+  donation_date text [not null]
+  expiry_date text [not null]
+  deleted_at text
+}
+
+Table requests {
+  id integer [pk, increment]
+  recipient_id integer [not null]
+  units integer [not null]
+  status text [not null]
+  request_date text [not null]
+  deleted_at text
+}
+
+Table inventory {
+  id integer [pk, increment]
+  blood_type_id integer [not null, unique]
+  units integer [not null]
+  deleted_at text
+}
+
+Ref: donors.blood_type_id > blood_types.id
+Ref: recipients.blood_type_id > blood_types.id
+Ref: inventory.blood_type_id > blood_types.id
+Ref: donations.donor_id > donors.id
+Ref: requests.recipient_id > recipients.id

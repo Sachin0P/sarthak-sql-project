@@ -1,82 +1,229 @@
-# DBMS Project Synopsis: Blood Bank Management System
+# DBMS Project Synopsis (Go + SQLite)
 
-## 1. Title Page
-- Project Title: Blood Bank Management System
-- Course Name & Code: UCS310 – Database Management Systems
-- Degree & Year: B.Tech (2nd Year)
-- Department / Institute Name: [To Be Filled]
-- Group Members (2–3 students) with Roll Numbers: [To Be Filled]
-- Lab Instructor Name: [To Be Filled]
-- Academic Year: 2025–2026
 
-## 2. Introduction
-The Blood Bank Management System addresses the need for a centralized database to track donors, blood donations, recipients, and blood inventory. Manual or file-based records make it difficult to maintain accurate stock levels, trace donation history, and respond quickly to urgent requests. A DBMS-backed solution improves reliability, availability, and integrity of critical healthcare data while enabling fast retrieval through SQL queries.
+1. Title Page
+Project Title: Blood Bank Management System
 
-## 3. Problem Statement
-Blood banks often struggle with fragmented data and delayed updates, leading to mismatches between available units and real demand. The existing manual processes lack strong validation, are error-prone, and provide limited auditability. This project proposes a structured database system that stores donors, donations, recipients, requests, and inventory in relational tables to ensure consistent, queryable, and up-to-date information.
+Course Name & Code: UCS310 – Database Management Systems
 
-## 4. Objectives of the Project
-- To design the database using an ER model with clearly defined entities and relationships.
-- To convert the ER model into relational tables with primary and foreign keys.
-- To apply normalization (up to 3NF) to reduce redundancy and update anomalies.
-- To implement the database using SQL DDL and DML.
-- To enforce data consistency via constraints and transactional updates.
+Degree & Year: B.Tech (2nd Year)
 
-## 5. Scope of the Project
-- Functional boundaries: donor registration, donation logging, recipient registration, blood requests, and inventory tracking.
-- Types of users: admin/staff responsible for data entry and verification.
-- Backend-focused modules: donors, donations, recipients, requests, inventory.
+Department: [To Be Filled]
 
-## 6. Proposed System Description
-The system records donor profiles and their donations, tracks recipient profiles and their blood requests, and maintains an inventory summary by blood type. Each donation increases inventory, while approved requests reduce inventory. The database schema supports fast lookup of available units, tracking of donation history, and status management for requests. Overall, the system improves efficiency, data consistency, and traceability of blood units.
+Institute Name: [To Be Filled]
 
-## 7. Database Design
-### 7.1 Entity–Relationship (ER) Diagram
-Entities and relationships:
-- Donor (1) — (M) Donation
-- Recipient (1) — (M) Request
-- Inventory (by blood_type) linked to donations and requests
-Cardinality and constraints are enforced via foreign keys and unique constraints.
+Group Members:
+[To Be Filled]
 
-### 7.2 Relational Schema
-- donors(id PK, name, blood_type, phone, city, created_at, deleted_at)
-- donations(id PK, donor_id FK -> donors.id, blood_type, units, donation_date, expiry_date, deleted_at)
-- recipients(id PK, name, blood_type, phone, hospital, created_at, deleted_at)
-- requests(id PK, recipient_id FK -> recipients.id, blood_type, units, status, request_date, deleted_at)
-- inventory(id PK, blood_type UNIQUE, units, deleted_at)
 
-## 8. Normalization
-Key functional dependencies:
-- donors: id → (name, blood_type, phone, city, created_at)
-- donations: id → (donor_id, blood_type, units, donation_date, expiry_date)
-- recipients: id → (name, blood_type, phone, hospital, created_at)
-- requests: id → (recipient_id, blood_type, units, status, request_date)
-- inventory: blood_type → units
+Lab Instructor: [To Be Filled]
 
-All relations are in 3NF: attributes depend on the key, the whole key, and nothing but the key.
+Academic Year: 2025–26
 
-## 9. Database Implementation
-### 9.1 SQL Implementation
-- DDL: CREATE TABLE for donors, donations, recipients, requests, inventory; constraints for PK/FK/UNIQUE.
-- DML: INSERT for new donors/recipients/donations/requests; UPDATE for inventory and request status; DELETE via soft deletes (`deleted_at`).
-- Queries: joins between donors–donations and recipients–requests; aggregate functions for inventory reporting; filters by blood_type and date ranges.
 
-### 9.2 PL/SQL Components
-SQLite does not support PL/SQL stored procedures. Business logic is handled in the Go application layer; optional triggers can be added for inventory updates if required.
+2. Introduction
+The Blood Bank Management System is a database-driven web application designed to manage blood donors, recipients, blood requests, and inventory efficiently. The system stores and manages donor and recipient records, donation logs, request status, and blood stock information.
 
-## 10. Transaction Management & Concurrency (Optional but Recommended)
-- Use transactions for donation creation and inventory increments.
-- Use transactions for request approval and inventory decrements.
-- ACID properties are ensured by SQLite’s transactional guarantees.
+Traditional manual or file-based systems suffer from data redundancy, inconsistency, and delayed updates. A Database Management System (DBMS) provides structured data storage, integrity constraints, and efficient query processing.
 
-## 11. Tools & Technologies Used
-- DBMS: SQLite
-- Backend: Go (`modernc.org/sqlite`)
-- Frontend: HTML templates + CSS
-- Interface tool (optional): SQLite DB Browser or command-line tools
+This project emphasizes backend implementation using SQL and relational database concepts with SQLite as the database.
 
-## 12. Expected Outcomes
-- A normalized database schema for blood bank operations.
-- Reliable data retrieval using SQL joins and aggregates.
-- Accurate inventory tracking aligned with donations and requests.
-- Improved consistency and integrity through constraints and transactions.
+
+
+
+3. Problem Statement
+In many blood banks, donor records and blood requests are handled manually or using spreadsheets. This leads to:
+
+   •   Duplicate or outdated donor/recipient records
+   •   Inaccurate inventory and expiry tracking
+   •   Difficulty in matching requests to available stock
+   •   Slow data retrieval and reporting
+   •   Lack of data integrity
+
+The proposed Blood Bank Management System provides a structured relational database solution to manage donors, donations, requests, and inventory efficiently.
+
+
+
+
+4. Objectives of the Project
+   •   To design a relational database for blood bank management
+   •   To implement primary and foreign key constraints
+   •   To normalize the database up to Third Normal Form (3NF)
+   •   To implement DDL and DML SQL commands
+   •   To ensure referential integrity and consistent inventory updates
+   •   To manage donation and request workflows effectively
+
+
+
+
+5. Scope of the Project
+Users:
+
+   •    Admin/Staff
+
+Modules:
+
+   •    Donor Registration Module
+   •    Recipient Registration Module
+   •    Donation Recording Module
+   •    Blood Request Module
+   •    Inventory Tracking Module
+
+The system focuses primarily on backend database operations.
+
+
+
+
+6. Proposed System Description
+The system is developed using:
+
+   •    Go (Golang) for backend logic
+   •    SQLite for database
+   •    HTML/CSS for frontend
+
+Working of the System:
+
+   1.   Admin/staff registers donors and recipients.
+   2.   Donations are recorded and linked to donors.
+   3.   Blood requests are created and tracked by status.
+   4.   Inventory is updated based on donations and fulfilled requests.
+   5.   Staff can view and manage all records through the web interface.
+
+The system improves efficiency, data consistency, and traceability of blood units.
+
+
+
+
+7. Database Design
+7.1 Entities Identified
+
+   1. Donor
+   2. Donation
+   3. Recipient
+   4. Request
+   5. Inventory
+   6. BloodType
+
+
+
+
+7.2 ER Diagram
+
+
+
+
+Entities and Relationships:
+
+   •   Donor submits Donation (1-M)
+   •   Recipient submits Request (1-M)
+   •   Inventory summarizes stock by blood type
+   •   BloodType is referenced by Donor, Recipient, and Inventory
+
+
+7.3 Relational Schema
+
+DONORS
+id (PK), name, blood_type_id (FK), phone, city, created_at, deleted_at
+
+BLOOD_TYPES
+id (PK), type (UNIQUE)
+
+DONATIONS
+id (PK), donor_id (FK), units, donation_date, expiry_date, deleted_at
+
+RECIPIENTS
+id (PK), name, blood_type_id (FK), phone, hospital, created_at, deleted_at
+
+REQUESTS
+id (PK), recipient_id (FK), units, status, request_date, deleted_at
+
+INVENTORY
+id (PK), blood_type_id (FK, UNIQUE), units, deleted_at
+
+
+
+
+8. Normalization
+Functional Dependencies
+
+Donors:
+id → name, blood_type_id, phone, city, created_at
+
+BloodTypes:
+id → type
+
+Donations:
+id → donor_id, units, donation_date, expiry_date
+
+Recipients:
+id → name, blood_type_id, phone, hospital, created_at
+
+Requests:
+id → recipient_id, units, status, request_date
+
+Inventory:
+blood_type_id → units
+
+
+1NF (First Normal Form)
+
+   •   All attributes are atomic (single-valued).
+   •   Each table has a primary key and no repeating groups.
+
+2NF (Second Normal Form)
+
+   •   All tables use single-column primary keys, so no partial dependency exists.
+   •   Every non-key attribute depends fully on its table's primary key.
+
+3NF (Third Normal Form)
+
+   •   Blood type values are stored once in BLOOD_TYPES and referenced via foreign keys.
+   •   Redundant blood_type fields in donations/requests/inventory are removed.
+   •   All non-key attributes depend only on the primary key.
+
+Therefore, the database is normalized up to 3NF.
+
+
+
+
+9. Database Implementation
+9.1 SQL Implementation
+
+DDL and DML Commands Used
+
+
+
+
+UPDATE Query
+
+
+9.2 Backend Logic Implementation
+
+Since SQLite does not support PL/SQL, application logic is implemented using Go programming language.
+
+   •   Donor/recipient creation
+   •   Donation insertion and inventory update
+   •   Request creation, status update, and fulfillment
+   •   Database connectivity
+
+Database connection is handled in main.go.
+
+
+
+
+10. Tools & Technologies Used
+   •   SQLite Database
+   •   SQL
+   •   Go (Golang)
+   •   HTML
+   •   CSS
+
+
+
+
+11. Expected Outcomes
+   •   Properly structured and normalized database
+   •   Efficient blood inventory management
+   •   Fast retrieval of donor and request data
+   •   Improved data consistency and integrity
+   •   Reduced manual errors

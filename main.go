@@ -20,30 +20,36 @@ var assets embed.FS
 const schema = `
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS blood_types (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL UNIQUE
+);
+
 CREATE TABLE IF NOT EXISTS donors (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
-	blood_type TEXT NOT NULL,
+	blood_type_id INTEGER NOT NULL,
 	phone TEXT,
 	city TEXT,
 	created_at TEXT NOT NULL,
-	deleted_at TEXT
+	deleted_at TEXT,
+	FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
 );
 
 CREATE TABLE IF NOT EXISTS recipients (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
-	blood_type TEXT NOT NULL,
+	blood_type_id INTEGER NOT NULL,
 	phone TEXT,
 	hospital TEXT,
 	created_at TEXT NOT NULL,
-	deleted_at TEXT
+	deleted_at TEXT,
+	FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
 );
 
 CREATE TABLE IF NOT EXISTS donations (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	donor_id INTEGER NOT NULL,
-	blood_type TEXT NOT NULL,
 	units INTEGER NOT NULL,
 	donation_date TEXT NOT NULL,
 	expiry_date TEXT NOT NULL,
@@ -53,15 +59,15 @@ CREATE TABLE IF NOT EXISTS donations (
 
 CREATE TABLE IF NOT EXISTS inventory (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	blood_type TEXT NOT NULL UNIQUE,
+	blood_type_id INTEGER NOT NULL UNIQUE,
 	units INTEGER NOT NULL,
-	deleted_at TEXT
+	deleted_at TEXT,
+	FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
 );
 
 CREATE TABLE IF NOT EXISTS requests (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	recipient_id INTEGER NOT NULL,
-	blood_type TEXT NOT NULL,
 	units INTEGER NOT NULL,
 	status TEXT NOT NULL,
 	request_date TEXT NOT NULL,
@@ -159,16 +165,21 @@ func main() {
 			return
 		}
 		name := strings.TrimSpace(r.FormValue("name"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
+		bloodType := normalizeBloodType(r.FormValue("blood_type"))
 		phone := strings.TrimSpace(r.FormValue("phone"))
 		city := strings.TrimSpace(r.FormValue("city"))
 		if name == "" || bloodType == "" {
 			renderWithMessage(w, tmpl, db, "Donor name and blood type are required.")
 			return
 		}
-		_, err := db.Exec(
-			"INSERT INTO donors (name, blood_type, phone, city, created_at) VALUES (?, ?, ?, ?, ?)",
-			name, bloodType, phone, city, time.Now().Format("2006-01-02"),
+		bloodTypeID, err := getOrCreateBloodTypeID(db, bloodType)
+		if err != nil {
+			renderWithMessage(w, tmpl, db, "Could not add donor.")
+			return
+		}
+		_, err = db.Exec(
+			"INSERT INTO donors (name, blood_type_id, phone, city, created_at) VALUES (?, ?, ?, ?, ?)",
+			name, bloodTypeID, phone, city, time.Now().Format("2006-01-02"),
 		)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not add donor.")
@@ -183,16 +194,21 @@ func main() {
 			return
 		}
 		name := strings.TrimSpace(r.FormValue("name"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
+		bloodType := normalizeBloodType(r.FormValue("blood_type"))
 		phone := strings.TrimSpace(r.FormValue("phone"))
 		hospital := strings.TrimSpace(r.FormValue("hospital"))
 		if name == "" || bloodType == "" {
 			renderWithMessage(w, tmpl, db, "Recipient name and blood type are required.")
 			return
 		}
-		_, err := db.Exec(
-			"INSERT INTO recipients (name, blood_type, phone, hospital, created_at) VALUES (?, ?, ?, ?, ?)",
-			name, bloodType, phone, hospital, time.Now().Format("2006-01-02"),
+		bloodTypeID, err := getOrCreateBloodTypeID(db, bloodType)
+		if err != nil {
+			renderWithMessage(w, tmpl, db, "Could not add recipient.")
+			return
+		}
+		_, err = db.Exec(
+			"INSERT INTO recipients (name, blood_type_id, phone, hospital, created_at) VALUES (?, ?, ?, ?, ?)",
+			name, bloodTypeID, phone, hospital, time.Now().Format("2006-01-02"),
 		)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not add recipient.")
@@ -207,22 +223,26 @@ func main() {
 			return
 		}
 		donorID, _ := strconv.Atoi(r.FormValue("donor_id"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
 		units, _ := strconv.Atoi(r.FormValue("units"))
 		expiry := strings.TrimSpace(r.FormValue("expiry_date"))
-		if donorID == 0 || bloodType == "" || units <= 0 || expiry == "" {
-			renderWithMessage(w, tmpl, db, "Donation requires donor, blood type, units, and expiry date.")
+		if donorID == 0 || units <= 0 || expiry == "" {
+			renderWithMessage(w, tmpl, db, "Donation requires donor, units, and expiry date.")
 			return
 		}
-		_, err := db.Exec(
-			"INSERT INTO donations (donor_id, blood_type, units, donation_date, expiry_date) VALUES (?, ?, ?, ?, ?)",
-			donorID, bloodType, units, time.Now().Format("2006-01-02"), expiry,
+		bloodTypeID, err := getDonorBloodTypeID(db, donorID)
+		if err != nil {
+			renderWithMessage(w, tmpl, db, "Donation requires a valid donor with blood type.")
+			return
+		}
+		_, err = db.Exec(
+			"INSERT INTO donations (donor_id, units, donation_date, expiry_date) VALUES (?, ?, ?, ?)",
+			donorID, units, time.Now().Format("2006-01-02"), expiry,
 		)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not add donation.")
 			return
 		}
-		if err := upsertInventory(db, bloodType, units); err != nil {
+		if err := upsertInventoryByTypeID(db, bloodTypeID, units); err != nil {
 			renderWithMessage(w, tmpl, db, "Donation saved, but inventory update failed.")
 			return
 		}
@@ -239,14 +259,19 @@ func main() {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		var bloodType string
 		var units int
-		err := db.QueryRow("SELECT blood_type, units FROM donations WHERE id = ? AND deleted_at IS NULL", id).Scan(&bloodType, &units)
+		var bloodTypeID int
+		err := db.QueryRow(`
+			SELECT donors.blood_type_id, d.units
+			FROM donations d
+			JOIN donors ON donors.id = d.donor_id
+			WHERE d.id = ? AND d.deleted_at IS NULL
+		`, id).Scan(&bloodTypeID, &units)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Donation not found.")
 			return
 		}
-		ok, err := consumeInventory(db, bloodType, units)
+		ok, err := consumeInventoryByTypeID(db, bloodTypeID, units)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Inventory update failed.")
 			return
@@ -269,15 +294,18 @@ func main() {
 			return
 		}
 		recipientID, _ := strconv.Atoi(r.FormValue("recipient_id"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
 		units, _ := strconv.Atoi(r.FormValue("units"))
-		if recipientID == 0 || bloodType == "" || units <= 0 {
-			renderWithMessage(w, tmpl, db, "Request requires recipient, blood type, and units.")
+		if recipientID == 0 || units <= 0 {
+			renderWithMessage(w, tmpl, db, "Request requires recipient and units.")
+			return
+		}
+		if _, err := getRecipientBloodTypeID(db, recipientID); err != nil {
+			renderWithMessage(w, tmpl, db, "Request requires a valid recipient with blood type.")
 			return
 		}
 		_, err := db.Exec(
-			"INSERT INTO requests (recipient_id, blood_type, units, status, request_date) VALUES (?, ?, ?, ?, ?)",
-			recipientID, bloodType, units, "Pending", time.Now().Format("2006-01-02"),
+			"INSERT INTO requests (recipient_id, units, status, request_date) VALUES (?, ?, ?, ?)",
+			recipientID, units, "Pending", time.Now().Format("2006-01-02"),
 		)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not add request.")
@@ -293,14 +321,19 @@ func main() {
 		}
 		id, _ := strconv.Atoi(r.FormValue("id"))
 		name := strings.TrimSpace(r.FormValue("name"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
+		bloodType := normalizeBloodType(r.FormValue("blood_type"))
 		phone := strings.TrimSpace(r.FormValue("phone"))
 		city := strings.TrimSpace(r.FormValue("city"))
 		if id == 0 || name == "" || bloodType == "" {
 			renderWithMessage(w, tmpl, db, "Donor update requires id, name, and blood type.")
 			return
 		}
-		_, err := db.Exec("UPDATE donors SET name = ?, blood_type = ?, phone = ?, city = ? WHERE id = ?", name, bloodType, phone, city, id)
+		bloodTypeID, err := getOrCreateBloodTypeID(db, bloodType)
+		if err != nil {
+			renderWithMessage(w, tmpl, db, "Could not update donor.")
+			return
+		}
+		_, err = db.Exec("UPDATE donors SET name = ?, blood_type_id = ?, phone = ?, city = ? WHERE id = ?", name, bloodTypeID, phone, city, id)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not update donor.")
 			return
@@ -333,14 +366,19 @@ func main() {
 		}
 		id, _ := strconv.Atoi(r.FormValue("id"))
 		name := strings.TrimSpace(r.FormValue("name"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
+		bloodType := normalizeBloodType(r.FormValue("blood_type"))
 		phone := strings.TrimSpace(r.FormValue("phone"))
 		hospital := strings.TrimSpace(r.FormValue("hospital"))
 		if id == 0 || name == "" || bloodType == "" {
 			renderWithMessage(w, tmpl, db, "Recipient update requires id, name, and blood type.")
 			return
 		}
-		_, err := db.Exec("UPDATE recipients SET name = ?, blood_type = ?, phone = ?, hospital = ? WHERE id = ?", name, bloodType, phone, hospital, id)
+		bloodTypeID, err := getOrCreateBloodTypeID(db, bloodType)
+		if err != nil {
+			renderWithMessage(w, tmpl, db, "Could not update recipient.")
+			return
+		}
+		_, err = db.Exec("UPDATE recipients SET name = ?, blood_type_id = ?, phone = ?, hospital = ? WHERE id = ?", name, bloodTypeID, phone, hospital, id)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not update recipient.")
 			return
@@ -376,14 +414,19 @@ func main() {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		var bloodType string
 		var units int
-		err := db.QueryRow("SELECT blood_type, units FROM requests WHERE id = ?", id).Scan(&bloodType, &units)
+		var bloodTypeID int
+		err := db.QueryRow(`
+			SELECT recipients.blood_type_id, r.units
+			FROM requests r
+			JOIN recipients ON recipients.id = r.recipient_id
+			WHERE r.id = ?
+		`, id).Scan(&bloodTypeID, &units)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Request not found.")
 			return
 		}
-		ok, err := consumeInventory(db, bloodType, units)
+		ok, err := consumeInventoryByTypeID(db, bloodTypeID, units)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Inventory update failed.")
 			return
@@ -406,32 +449,35 @@ func main() {
 			return
 		}
 		id, _ := strconv.Atoi(r.FormValue("id"))
-		bloodType := strings.TrimSpace(r.FormValue("blood_type"))
 		units, _ := strconv.Atoi(r.FormValue("units"))
 		status := strings.TrimSpace(r.FormValue("status"))
-		if id == 0 || bloodType == "" || units <= 0 || status == "" {
-			renderWithMessage(w, tmpl, db, "Request update requires id, blood type, units, and status.")
+		if id == 0 || units <= 0 || status == "" {
+			renderWithMessage(w, tmpl, db, "Request update requires id, units, and status.")
 			return
 		}
 
-		var oldBlood string
 		var oldUnits int
 		var oldStatus string
-		err := db.QueryRow("SELECT blood_type, units, status FROM requests WHERE id = ? AND deleted_at IS NULL", id).Scan(&oldBlood, &oldUnits, &oldStatus)
+		err := db.QueryRow("SELECT units, status FROM requests WHERE id = ? AND deleted_at IS NULL", id).Scan(&oldUnits, &oldStatus)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Request not found.")
 			return
 		}
 
 		if oldStatus == "Fulfilled" {
-			if status != "Fulfilled" || oldBlood != bloodType || oldUnits != units {
+			if status != "Fulfilled" || oldUnits != units {
 				renderWithMessage(w, tmpl, db, "Cannot modify a fulfilled request.")
 				return
 			}
 		}
 
 		if oldStatus != "Fulfilled" && status == "Fulfilled" {
-			ok, err := consumeInventory(db, bloodType, units)
+			bloodTypeID, err := getRequestBloodTypeID(db, id)
+			if err != nil {
+				renderWithMessage(w, tmpl, db, "Request is missing blood type.")
+				return
+			}
+			ok, err := consumeInventoryByTypeID(db, bloodTypeID, units)
 			if err != nil {
 				renderWithMessage(w, tmpl, db, "Inventory update failed.")
 				return
@@ -442,7 +488,7 @@ func main() {
 			}
 		}
 
-		_, err = db.Exec("UPDATE requests SET blood_type = ?, units = ?, status = ? WHERE id = ?", bloodType, units, status, id)
+		_, err = db.Exec("UPDATE requests SET units = ?, status = ? WHERE id = ?", units, status, id)
 		if err != nil {
 			renderWithMessage(w, tmpl, db, "Could not update request.")
 			return
@@ -489,6 +535,9 @@ func initDB(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
+	if err := migrateTo3NF(db); err != nil {
+		return err
+	}
 	if err := ensureColumn(db, "donors", "deleted_at", "TEXT"); err != nil {
 		return err
 	}
@@ -502,6 +551,9 @@ func initDB(db *sql.DB) error {
 		return err
 	}
 	if err := ensureColumn(db, "requests", "deleted_at", "TEXT"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_blood_type_id ON inventory(blood_type_id)"); err != nil {
 		return err
 	}
 	return nil
@@ -534,6 +586,292 @@ func ensureColumn(db *sql.DB, table string, column string, colType string) error
 
 	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType))
 	return err
+}
+
+func normalizeBloodType(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func getOrCreateBloodTypeID(db *sql.DB, bloodType string) (int, error) {
+	bloodType = normalizeBloodType(bloodType)
+	if bloodType == "" {
+		return 0, fmt.Errorf("blood type required")
+	}
+	var id int
+	err := db.QueryRow("SELECT id FROM blood_types WHERE type = ?", bloodType).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	res, err := db.Exec("INSERT INTO blood_types (type) VALUES (?)", bloodType)
+	if err != nil {
+		return 0, err
+	}
+	lastID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return int(lastID), nil
+}
+
+func getDonorBloodTypeID(db *sql.DB, donorID int) (int, error) {
+	var id int
+	err := db.QueryRow("SELECT blood_type_id FROM donors WHERE id = ? AND deleted_at IS NULL", donorID).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	if id == 0 {
+		return 0, fmt.Errorf("missing blood type")
+	}
+	return id, nil
+}
+
+func getRecipientBloodTypeID(db *sql.DB, recipientID int) (int, error) {
+	var id int
+	err := db.QueryRow("SELECT blood_type_id FROM recipients WHERE id = ? AND deleted_at IS NULL", recipientID).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	if id == 0 {
+		return 0, fmt.Errorf("missing blood type")
+	}
+	return id, nil
+}
+
+func getRequestBloodTypeID(db *sql.DB, requestID int) (int, error) {
+	var id int
+	err := db.QueryRow(`
+		SELECT recipients.blood_type_id
+		FROM requests r
+		JOIN recipients ON recipients.id = r.recipient_id
+		WHERE r.id = ? AND r.deleted_at IS NULL
+	`, requestID).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	if id == 0 {
+		return 0, fmt.Errorf("missing blood type")
+	}
+	return id, nil
+}
+
+func tableHasColumn(db *sql.DB, table string, column string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func migrateTo3NF(db *sql.DB) error {
+	hasBloodType, err := tableHasColumn(db, "donors", "blood_type")
+	if err != nil {
+		return err
+	}
+	if !hasBloodType {
+		return nil
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS blood_types (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL UNIQUE
+		)
+	`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+		INSERT OR IGNORE INTO blood_types (type)
+		SELECT DISTINCT UPPER(TRIM(blood_type)) FROM donors WHERE blood_type IS NOT NULL AND TRIM(blood_type) <> ''
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT OR IGNORE INTO blood_types (type)
+		SELECT DISTINCT UPPER(TRIM(blood_type)) FROM recipients WHERE blood_type IS NOT NULL AND TRIM(blood_type) <> ''
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT OR IGNORE INTO blood_types (type)
+		SELECT DISTINCT UPPER(TRIM(blood_type)) FROM inventory WHERE blood_type IS NOT NULL AND TRIM(blood_type) <> ''
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO blood_types (type) VALUES ('UNKNOWN')`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+		CREATE TABLE donors_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			blood_type_id INTEGER NOT NULL,
+			phone TEXT,
+			city TEXT,
+			created_at TEXT NOT NULL,
+			deleted_at TEXT,
+			FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE recipients_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			blood_type_id INTEGER NOT NULL,
+			phone TEXT,
+			hospital TEXT,
+			created_at TEXT NOT NULL,
+			deleted_at TEXT,
+			FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE donations_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			donor_id INTEGER NOT NULL,
+			units INTEGER NOT NULL,
+			donation_date TEXT NOT NULL,
+			expiry_date TEXT NOT NULL,
+			deleted_at TEXT,
+			FOREIGN KEY(donor_id) REFERENCES donors(id)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE requests_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			recipient_id INTEGER NOT NULL,
+			units INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			request_date TEXT NOT NULL,
+			deleted_at TEXT,
+			FOREIGN KEY(recipient_id) REFERENCES recipients(id)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE inventory_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			blood_type_id INTEGER NOT NULL UNIQUE,
+			units INTEGER NOT NULL,
+			deleted_at TEXT,
+			FOREIGN KEY(blood_type_id) REFERENCES blood_types(id)
+		)
+	`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+		INSERT INTO donors_new (id, name, blood_type_id, phone, city, created_at, deleted_at)
+		SELECT id, name,
+			COALESCE((SELECT id FROM blood_types WHERE type = UPPER(TRIM(blood_type))),
+				(SELECT id FROM blood_types WHERE type = 'UNKNOWN')),
+			phone, city, created_at, deleted_at
+		FROM donors
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT INTO recipients_new (id, name, blood_type_id, phone, hospital, created_at, deleted_at)
+		SELECT id, name,
+			COALESCE((SELECT id FROM blood_types WHERE type = UPPER(TRIM(blood_type))),
+				(SELECT id FROM blood_types WHERE type = 'UNKNOWN')),
+			phone, hospital, created_at, deleted_at
+		FROM recipients
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT INTO donations_new (id, donor_id, units, donation_date, expiry_date, deleted_at)
+		SELECT id, donor_id, units, donation_date, expiry_date, deleted_at
+		FROM donations
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT INTO requests_new (id, recipient_id, units, status, request_date, deleted_at)
+		SELECT id, recipient_id, units, status, request_date, deleted_at
+		FROM requests
+	`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT INTO inventory_new (id, blood_type_id, units, deleted_at)
+		SELECT id,
+			COALESCE((SELECT id FROM blood_types WHERE type = UPPER(TRIM(blood_type))),
+				(SELECT id FROM blood_types WHERE type = 'UNKNOWN')),
+			units, deleted_at
+		FROM inventory
+	`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec("DROP TABLE donors"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE recipients"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE donations"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE requests"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE inventory"); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec("ALTER TABLE donors_new RENAME TO donors"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("ALTER TABLE recipients_new RENAME TO recipients"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("ALTER TABLE donations_new RENAME TO donations"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("ALTER TABLE requests_new RENAME TO requests"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("ALTER TABLE inventory_new RENAME TO inventory"); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func renderWithMessage(w http.ResponseWriter, tmpl *template.Template, db *sql.DB, msg string) {
@@ -584,7 +922,13 @@ func loadPageData(db *sql.DB, msg string) (PageData, error) {
 }
 
 func loadDonors(db *sql.DB) ([]Donor, error) {
-	rows, err := db.Query("SELECT id, name, blood_type, phone, city, created_at FROM donors WHERE deleted_at IS NULL ORDER BY id DESC")
+	rows, err := db.Query(`
+		SELECT d.id, d.name, bt.type, d.phone, d.city, d.created_at
+		FROM donors d
+		JOIN blood_types bt ON bt.id = d.blood_type_id
+		WHERE d.deleted_at IS NULL
+		ORDER BY d.id DESC
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +946,13 @@ func loadDonors(db *sql.DB) ([]Donor, error) {
 }
 
 func loadRecipients(db *sql.DB) ([]Recipient, error) {
-	rows, err := db.Query("SELECT id, name, blood_type, phone, hospital, created_at FROM recipients WHERE deleted_at IS NULL ORDER BY id DESC")
+	rows, err := db.Query(`
+		SELECT r.id, r.name, bt.type, r.phone, r.hospital, r.created_at
+		FROM recipients r
+		JOIN blood_types bt ON bt.id = r.blood_type_id
+		WHERE r.deleted_at IS NULL
+		ORDER BY r.id DESC
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -621,9 +971,10 @@ func loadRecipients(db *sql.DB) ([]Recipient, error) {
 
 func loadDonations(db *sql.DB) ([]Donation, error) {
 	rows, err := db.Query(`
-		SELECT d.id, d.donor_id, donors.name, d.blood_type, d.units, d.donation_date, d.expiry_date
+		SELECT d.id, d.donor_id, donors.name, bt.type, d.units, d.donation_date, d.expiry_date
 		FROM donations d
 		JOIN donors ON donors.id = d.donor_id
+		JOIN blood_types bt ON bt.id = donors.blood_type_id
 		WHERE d.deleted_at IS NULL
 		ORDER BY d.id DESC
 	`)
@@ -644,7 +995,13 @@ func loadDonations(db *sql.DB) ([]Donation, error) {
 }
 
 func loadInventory(db *sql.DB) ([]Inventory, error) {
-	rows, err := db.Query("SELECT blood_type, units FROM inventory WHERE deleted_at IS NULL ORDER BY blood_type")
+	rows, err := db.Query(`
+		SELECT bt.type, i.units
+		FROM inventory i
+		JOIN blood_types bt ON bt.id = i.blood_type_id
+		WHERE i.deleted_at IS NULL
+		ORDER BY bt.type
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -663,9 +1020,10 @@ func loadInventory(db *sql.DB) ([]Inventory, error) {
 
 func loadRequests(db *sql.DB) ([]Request, error) {
 	rows, err := db.Query(`
-		SELECT r.id, r.recipient_id, recipients.name, r.blood_type, r.units, r.status, r.request_date
+		SELECT r.id, r.recipient_id, recipients.name, bt.type, r.units, r.status, r.request_date
 		FROM requests r
 		JOIN recipients ON recipients.id = r.recipient_id
+		JOIN blood_types bt ON bt.id = recipients.blood_type_id
 		WHERE r.deleted_at IS NULL
 		ORDER BY r.id DESC
 	`)
@@ -685,8 +1043,8 @@ func loadRequests(db *sql.DB) ([]Request, error) {
 	return requests, rows.Err()
 }
 
-func upsertInventory(db *sql.DB, bloodType string, units int) error {
-	res, err := db.Exec("UPDATE inventory SET units = units + ?, deleted_at = NULL WHERE blood_type = ?", units, bloodType)
+func upsertInventoryByTypeID(db *sql.DB, bloodTypeID int, units int) error {
+	res, err := db.Exec("UPDATE inventory SET units = units + ?, deleted_at = NULL WHERE blood_type_id = ?", units, bloodTypeID)
 	if err != nil {
 		return err
 	}
@@ -695,15 +1053,15 @@ func upsertInventory(db *sql.DB, bloodType string, units int) error {
 		return err
 	}
 	if affected == 0 {
-		_, err = db.Exec("INSERT INTO inventory (blood_type, units, deleted_at) VALUES (?, ?, NULL)", bloodType, units)
+		_, err = db.Exec("INSERT INTO inventory (blood_type_id, units, deleted_at) VALUES (?, ?, NULL)", bloodTypeID, units)
 		return err
 	}
 	return nil
 }
 
-func consumeInventory(db *sql.DB, bloodType string, units int) (bool, error) {
+func consumeInventoryByTypeID(db *sql.DB, bloodTypeID int, units int) (bool, error) {
 	var current int
-	err := db.QueryRow("SELECT units FROM inventory WHERE blood_type = ? AND deleted_at IS NULL", bloodType).Scan(&current)
+	err := db.QueryRow("SELECT units FROM inventory WHERE blood_type_id = ? AND deleted_at IS NULL", bloodTypeID).Scan(&current)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -713,7 +1071,7 @@ func consumeInventory(db *sql.DB, bloodType string, units int) (bool, error) {
 	if current < units {
 		return false, nil
 	}
-	_, err = db.Exec("UPDATE inventory SET units = units - ? WHERE blood_type = ?", units, bloodType)
+	_, err = db.Exec("UPDATE inventory SET units = units - ? WHERE blood_type_id = ?", units, bloodTypeID)
 	if err != nil {
 		return false, err
 	}

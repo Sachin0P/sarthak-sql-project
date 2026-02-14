@@ -181,9 +181,7 @@
           {{range .Requests}}
           <tr>
             <td>{{.Recipient}}</td>
-            <td>
-              <input name="blood_type" value="{{.BloodType}}" form="req-update-{{.ID}}" />
-            </td>
+            <td>{{.BloodType}}</td>
             <td>
               <input type="number" min="1" name="units" value="{{.Units}}" form="req-update-{{.ID}}" />
             </td>

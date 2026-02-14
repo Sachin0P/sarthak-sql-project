@@ -1,0 +1,51 @@
+// 1NF schema: all attributes are atomic and tables have primary keys
+
+Table donors {
+  id integer [pk, increment]
+  name text [not null]
+  blood_type text [not null]
+  phone text
+  city text
+  created_at text [not null]
+  deleted_at text
+}
+
+Table donations {
+  id integer [pk, increment]
+  donor_id integer [not null]
+  blood_type text [not null]
+  units integer [not null]
+  donation_date text [not null]
+  expiry_date text [not null]
+  deleted_at text
+}
+
+Table recipients {
+  id integer [pk, increment]
+  name text [not null]
+  blood_type text [not null]
+  phone text
+  hospital text
+  created_at text [not null]
+  deleted_at text
+}
+
+Table requests {
+  id integer [pk, increment]
+  recipient_id integer [not null]
+  blood_type text [not null]
+  units integer [not null]
+  status text [not null]
+  request_date text [not null]
+  deleted_at text
+}
+
+Table inventory {
+  id integer [pk, increment]
+  blood_type text [not null, unique]
+  units integer [not null]
+  deleted_at text
+}
+
+Ref: donations.donor_id > donors.id
+Ref: requests.recipient_id > recipients.id

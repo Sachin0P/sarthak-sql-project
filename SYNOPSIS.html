@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>DBMS Project Synopsis: Blood Bank Management System</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; margin: 1.1in; color: #111; }
+  h1, h2, h3 { margin: 0.6em 0 0.3em; }
+  h1 { font-size: 20pt; }
+  h2 { font-size: 14pt; }
+  h3 { font-size: 12pt; }
+  p { line-height: 1.4; font-size: 11pt; }
+  ul { margin: 0.2em 0 0.6em 1.2em; }
+  li { margin: 0.15em 0; font-size: 11pt; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 0.8em 0; }
+</style>
+</head>
+<body>
+<h1>DBMS Project Synopsis: Blood Bank Management System</h1>
+<h2>1. Title Page</h2>
+<ul>
+<li>Project Title: Blood Bank Management System</li>
+<li>Course Name &amp; Code: UCS310 – Database Management Systems</li>
+<li>Degree &amp; Year: B.Tech (2nd Year)</li>
+<li>Department / Institute Name: [To Be Filled]</li>
+<li>Group Members (2–3 students) with Roll Numbers: [To Be Filled]</li>
+<li>Lab Instructor Name: [To Be Filled]</li>
+<li>Academic Year: 2025–2026</li>
+</ul>
+<h2>2. Introduction</h2>
+<p>The Blood Bank Management System addresses the need for a centralized database to track donors, blood donations, recipients, and blood inventory. Manual or file-based records make it difficult to maintain accurate stock levels, trace donation history, and respond quickly to urgent requests. A DBMS-backed solution improves reliability, availability, and integrity of critical healthcare data while enabling fast retrieval through SQL queries.</p>
+<h2>3. Problem Statement</h2>
+<p>Blood banks often struggle with fragmented data and delayed updates, leading to mismatches between available units and real demand. The existing manual processes lack strong validation, are error-prone, and provide limited auditability. This project proposes a structured database system that stores donors, donations, recipients, requests, and inventory in relational tables to ensure consistent, queryable, and up-to-date information.</p>
+<h2>4. Objectives of the Project</h2>
+<ul>
+<li>To design the database using an ER model with clearly defined entities and relationships.</li>
+<li>To convert the ER model into relational tables with primary and foreign keys.</li>
+<li>To apply normalization (up to 3NF) to reduce redundancy and update anomalies.</li>
+<li>To implement the database using SQL DDL and DML.</li>
+<li>To enforce data consistency via constraints and transactional updates.</li>
+</ul>
+<h2>5. Scope of the Project</h2>
+<ul>
+<li>Functional boundaries: donor registration, donation logging, recipient registration, blood requests, and inventory tracking.</li>
+<li>Types of users: admin/staff responsible for data entry and verification.</li>
+<li>Backend-focused modules: donors, donations, recipients, requests, inventory.</li>
+</ul>
+<h2>6. Proposed System Description</h2>
+<p>The system records donor profiles and their donations, tracks recipient profiles and their blood requests, and maintains an inventory summary by blood type. Each donation increases inventory, while approved requests reduce inventory. The database schema supports fast lookup of available units, tracking of donation history, and status management for requests. Overall, the system improves efficiency, data consistency, and traceability of blood units.</p>
+<h2>7. Database Design</h2>
+<h3>7.1 Entity–Relationship (ER) Diagram</h3>
+<p>Entities and relationships:
+- Donor (1) — (M) Donation
+- Recipient (1) — (M) Request
+- Inventory (by blood_type) linked to donations and requests
+Cardinality and constraints are enforced via foreign keys and unique constraints.</p>
+<h3>7.2 Relational Schema</h3>
+<ul>
+<li>donors(id PK, name, blood_type, phone, city, created_at, deleted_at)</li>
+<li>donations(id PK, donor_id FK -&gt; donors.id, blood_type, units, donation_date, expiry_date, deleted_at)</li>
+<li>recipients(id PK, name, blood_type, phone, hospital, created_at, deleted_at)</li>
+<li>requests(id PK, recipient_id FK -&gt; recipients.id, blood_type, units, status, request_date, deleted_at)</li>
+<li>inventory(id PK, blood_type UNIQUE, units, deleted_at)</li>
+</ul>
+<h2>8. Normalization</h2>
+<p>Key functional dependencies:
+- donors: id → (name, blood_type, phone, city, created_at)
+- donations: id → (donor_id, blood_type, units, donation_date, expiry_date)
+- recipients: id → (name, blood_type, phone, hospital, created_at)
+- requests: id → (recipient_id, blood_type, units, status, request_date)
+- inventory: blood_type → units</p>
+<p>All relations are in 3NF: attributes depend on the key, the whole key, and nothing but the key.</p>
+<h2>9. Database Implementation</h2>
+<h3>9.1 SQL Implementation</h3>
+<ul>
+<li>DDL: CREATE TABLE for donors, donations, recipients, requests, inventory; constraints for PK/FK/UNIQUE.</li>
+<li>DML: INSERT for new donors/recipients/donations/requests; UPDATE for inventory and request status; DELETE via soft deletes (<code>deleted_at</code>).</li>
+<li>Queries: joins between donors–donations and recipients–requests; aggregate functions for inventory reporting; filters by blood_type and date ranges.</li>
+</ul>
+<h3>9.2 PL/SQL Components</h3>
+<p>SQLite does not support PL/SQL stored procedures. Business logic is handled in the Go application layer; optional triggers can be added for inventory updates if required.</p>
+<h2>10. Transaction Management &amp; Concurrency (Optional but Recommended)</h2>
+<ul>
+<li>Use transactions for donation creation and inventory increments.</li>
+<li>Use transactions for request approval and inventory decrements.</li>
+<li>ACID properties are ensured by SQLite’s transactional guarantees.</li>
+</ul>
+<h2>11. Tools &amp; Technologies Used</h2>
+<ul>
+<li>DBMS: SQLite</li>
+<li>Backend: Go (<code>modernc.org/sqlite</code>)</li>
+<li>Frontend: HTML templates + CSS</li>
+<li>Interface tool (optional): SQLite DB Browser or command-line tools</li>
+</ul>
+<h2>12. Expected Outcomes</h2>
+<ul>
+<li>A normalized database schema for blood bank operations.</li>
+<li>Reliable data retrieval using SQL joins and aggregates.</li>
+<li>Accurate inventory tracking aligned with donations and requests.</li>
+<li>Improved consistency and integrity through constraints and transactions.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blood Bank Management DBMS</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <h1>Blood Bank Management</h1>
+      <p>Simple DBMS project using Go + SQLite</p>
+    </div>
+  </header>
+
+  {{if .Message}}
+    <div class="notice">{{.Message}}</div>
+  {{end}}
+
+  <main class="grid">
+    <section class="card">
+      <h2>Add Donor</h2>
+      <form method="post" action="/donors">
+        <label>Name
+          <input name="name" required />
+        </label>
+        <label>Blood Type
+          <input name="blood_type" placeholder="A+" required />
+        </label>
+        <label>Phone
+          <input name="phone" />
+        </label>
+        <label>City
+          <input name="city" />
+        </label>
+        <button type="submit">Save Donor</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Add Recipient</h2>
+      <form method="post" action="/recipients">
+        <label>Name
+          <input name="name" required />
+        </label>
+        <label>Blood Type
+          <input name="blood_type" placeholder="O-" required />
+        </label>
+        <label>Phone
+          <input name="phone" />
+        </label>
+        <label>Hospital
+          <input name="hospital" />
+        </label>
+        <button type="submit">Save Recipient</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Record Donation</h2>
+      <form method="post" action="/donations">
+        <label>Donor
+          <select name="donor_id" required data-donor-select>
+            <option value="">Select donor</option>
+            {{range .Donors}}
+              <option value="{{.ID}}" data-blood="{{.BloodType}}">{{.Name}} ({{.BloodType}})</option>
+            {{end}}
+          </select>
+        </label>
+        <label>Blood Type
+          <input name="blood_type" placeholder="B+" required readonly data-donation-blood />
+        </label>
+        <label>Units
+          <input type="number" min="1" name="units" required />
+        </label>
+        <label>Expiry Date
+          <input type="date" name="expiry_date" required />
+        </label>
+        <button type="submit">Add Donation</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Request Blood</h2>
+      <form method="post" action="/requests">
+        <label>Recipient
+          <select name="recipient_id" required data-recipient-select>
+            <option value="">Select recipient</option>
+            {{range .Recipients}}
+              <option value="{{.ID}}" data-blood="{{.BloodType}}">{{.Name}} ({{.BloodType}})</option>
+            {{end}}
+          </select>
+        </label>
+        <label>Blood Type
+          <input name="blood_type" placeholder="AB-" required readonly data-request-blood />
+        </label>
+        <label>Units
+          <input type="number" min="1" name="units" required />
+        </label>
+        <button type="submit">Create Request</button>
+      </form>
+    </section>
+
+    <section class="card wide">
+      <h2>Inventory</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Blood Type</th>
+            <th>Units</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Inventory}}
+          <tr>
+            <td>{{.BloodType}}</td>
+            <td>{{.Units}}</td>
+          </tr>
+          {{end}}
+          {{if not .Inventory}}
+          <tr>
+            <td colspan="2">No inventory yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card wide">
+      <h2>Donations</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Donor</th>
+            <th>Blood Type</th>
+            <th>Units</th>
+            <th>Date</th>
+            <th>Expiry</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Donations}}
+          <tr>
+            <td>{{.DonorName}}</td>
+            <td>{{.BloodType}}</td>
+            <td>{{.Units}}</td>
+            <td>{{.DonationDate}}</td>
+            <td>{{.ExpiryDate}}</td>
+            <td>
+              <form method="post" action="/donations/delete" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+          {{if not .Donations}}
+          <tr>
+            <td colspan="6">No donations yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card wide">
+      <h2>Requests</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Recipient</th>
+            <th>Blood Type</th>
+            <th>Units</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Requests}}
+          <tr>
+            <td>{{.Recipient}}</td>
+            <td>
+              <input name="blood_type" value="{{.BloodType}}" form="req-update-{{.ID}}" />
+            </td>
+            <td>
+              <input type="number" min="1" name="units" value="{{.Units}}" form="req-update-{{.ID}}" />
+            </td>
+            <td>
+              <select name="status" form="req-update-{{.ID}}">
+                <option {{if eq .Status "Pending"}}selected{{end}}>Pending</option>
+                <option {{if eq .Status "Fulfilled"}}selected{{end}}>Fulfilled</option>
+                <option {{if eq .Status "Cancelled"}}selected{{end}}>Cancelled</option>
+              </select>
+            </td>
+            <td>
+              <form method="post" action="/requests/update" id="req-update-{{.ID}}" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit">Update</button>
+              </form>
+              {{if eq .Status "Pending"}}
+                <form method="post" action="/fulfill" class="inline">
+                  <input type="hidden" name="id" value="{{.ID}}" />
+                  <button type="submit">Fulfill</button>
+                </form>
+              {{else}}
+                <span class="badge">Done</span>
+              {{end}}
+              <form method="post" action="/requests/delete" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+          {{if not .Requests}}
+          <tr>
+            <td colspan="5">No requests yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card wide">
+      <h2>Donors</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Blood Type</th>
+            <th>Phone</th>
+            <th>City</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Donors}}
+          <tr>
+            <td><input name="name" value="{{.Name}}" form="donor-update-{{.ID}}" /></td>
+            <td><input name="blood_type" value="{{.BloodType}}" form="donor-update-{{.ID}}" /></td>
+            <td><input name="phone" value="{{.Phone}}" form="donor-update-{{.ID}}" /></td>
+            <td><input name="city" value="{{.City}}" form="donor-update-{{.ID}}" /></td>
+            <td>
+              <form method="post" action="/donors/update" id="donor-update-{{.ID}}" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit">Update</button>
+              </form>
+              <form method="post" action="/donors/delete" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+          {{if not .Donors}}
+          <tr>
+            <td colspan="5">No donors yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card wide">
+      <h2>Recipients</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Blood Type</th>
+            <th>Phone</th>
+            <th>Hospital</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Recipients}}
+          <tr>
+            <td><input name="name" value="{{.Name}}" form="recipient-update-{{.ID}}" /></td>
+            <td><input name="blood_type" value="{{.BloodType}}" form="recipient-update-{{.ID}}" /></td>
+            <td><input name="phone" value="{{.Phone}}" form="recipient-update-{{.ID}}" /></td>
+            <td><input name="hospital" value="{{.Hospital}}" form="recipient-update-{{.ID}}" /></td>
+            <td>
+              <form method="post" action="/recipients/update" id="recipient-update-{{.ID}}" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit">Update</button>
+              </form>
+              <form method="post" action="/recipients/delete" class="inline">
+                <input type="hidden" name="id" value="{{.ID}}" />
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+          {{if not .Recipients}}
+          <tr>
+            <td colspan="5">No recipients yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const donorSelect = document.querySelector('[data-donor-select]');
+    const donationBlood = document.querySelector('[data-donation-blood]');
+    const recipientSelect = document.querySelector('[data-recipient-select]');
+    const requestBlood = document.querySelector('[data-request-blood]');
+
+    function syncBlood(selectEl, inputEl) {
+      if (!selectEl || !inputEl) return;
+      const option = selectEl.options[selectEl.selectedIndex];
+      inputEl.value = option && option.dataset.blood ? option.dataset.blood : '';
+    }
+
+    if (donorSelect && donationBlood) {
+      donorSelect.addEventListener('change', () => syncBlood(donorSelect, donationBlood));
+      syncBlood(donorSelect, donationBlood);
+    }
+
+    if (recipientSelect && requestBlood) {
+      recipientSelect.addEventListener('change', () => syncBlood(recipientSelect, requestBlood));
+      syncBlood(recipientSelect, requestBlood);
+    }
+  </script>
+</body>
+</html>
